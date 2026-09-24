@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Sidebar from './Sidebar'
 import Navbar from './Navbar'
+import OfflineBanner from '../shared/OfflineBanner'
 
 const AdminLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -12,8 +13,11 @@ const AdminLayout = ({ children }) => {
         onClose={() => setSidebarOpen(false)}
       />
       <Navbar onMenuClick={() => setSidebarOpen(true)} />
-      <main className="lg:ml-64 pt-16 p-4 lg:p-6 min-h-screen">
-        {children}
+      <main className="lg:ml-64 pt-16 min-h-screen">
+        <OfflineBanner />
+        <div className="p-4 lg:p-6">
+          {children}
+        </div>
       </main>
     </div>
   )

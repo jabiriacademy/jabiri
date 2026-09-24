@@ -3,6 +3,8 @@ import { supabase } from '../../../lib/supabase'
 import { useAuthStore } from '../../../store/authStore'
 import { useTermStore } from '../../../store/termStore'
 import { CheckCircle, XCircle, Clock, FileCheck } from 'lucide-react'
+import { savePendingAttendance } from '../../../lib/offlineDB'
+import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
 
 const STATUS_OPTIONS = ['Present', 'Absent', 'Late', 'Excused']
 
@@ -16,6 +18,7 @@ const statusStyle = {
 const MarkAttendance = () => {
   const { schoolId, user } = useAuthStore()
   const { currentSession, currentTerm } = useTermStore()
+  const { checkPending } = useOnlineStatus()
 
   const [staffId, setStaffId] = useState(null)
   const [assignedClasses, setAssignedClasses] = useState([])
@@ -160,13 +163,18 @@ const MarkAttendance = () => {
         marked_by: staffId,
       }))
 
-      // Upsert — update if exists, insert if not
-      const { error } = await supabase
-        .from('attendance')
-        .upsert(records, { onConflict: 'student_id,date' })
+      if (navigator.onLine) {
+        const { error } = await supabase
+          .from('attendance')
+          .upsert(records, { onConflict: 'student_id,date' })
 
-      if (error) throw error
-      setSuccess(`Attendance saved for ${date}!`)
+        if (error) throw error
+        setSuccess(`Attendance saved for ${date}!`)
+      } else {
+        await savePendingAttendance(records)
+        setSuccess(`📱 Saved offline for ${date} — will sync when connected`)
+        checkPending()
+      }
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
       setError('Failed to save attendance. Please try again.')

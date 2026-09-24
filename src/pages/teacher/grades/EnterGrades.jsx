@@ -3,6 +3,8 @@ import { supabase } from '../../../lib/supabase'
 import { useAuthStore } from '../../../store/authStore'
 import { useTermStore } from '../../../store/termStore'
 import { Save } from 'lucide-react'
+import { savePendingGrades } from '../../../lib/offlineDB'
+import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
 
 const PHASES = [
   { key: 'ca1', label: 'CA 1' },
@@ -13,6 +15,7 @@ const PHASES = [
 const EnterGrades = () => {
   const { user, schoolId } = useAuthStore()
   const { currentSession, currentTerm } = useTermStore()
+  const { checkPending } = useOnlineStatus()
 
   const [staffId, setStaffId] = useState(null)
   const [assignedClasses, setAssignedClasses] = useState([])
@@ -221,11 +224,16 @@ const EnterGrades = () => {
         }
       })
 
-      const { error } = await supabase
-        .from('grades')
-        .upsert(records, { onConflict: 'student_id,subject_id,term_id' })
+      if (navigator.onLine) {
+        const { error } = await supabase
+          .from('grades')
+          .upsert(records, { onConflict: 'student_id,subject_id,term_id' })
 
-      if (error) throw error
+        if (error) throw error
+      } else {
+        await savePendingGrades(records)
+        checkPending()
+      }
 
       // Update savedScores
       const updatedSaved = { ...savedScores }
@@ -239,7 +247,11 @@ const EnterGrades = () => {
       })
       setSavedScores(updatedSaved)
 
-      setSuccess(`${PHASES.find(p => p.key === activePhase)?.label} scores saved successfully!`)
+      setSuccess(
+        navigator.onLine
+          ? `${PHASES.find(p => p.key === activePhase)?.label} scores saved successfully!`
+          : `📱 ${PHASES.find(p => p.key === activePhase)?.label} scores saved offline — will sync when connected`
+      )
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
       setError('Failed to save scores. Please try again.')

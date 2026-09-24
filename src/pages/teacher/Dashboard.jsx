@@ -8,6 +8,7 @@ import {
   ClipboardList, BookOpen, BarChart2,
   FileText, Users, CheckCircle
 } from 'lucide-react'
+import { cacheStudents, cacheClasses, cacheSubjects } from '../../lib/offlineDB'
 
 const TeacherDashboard = () => {
   const { user, schoolId } = useAuthStore()
@@ -40,6 +41,27 @@ const TeacherDashboard = () => {
   .select('*, classes(id, name, section), arms(id, name)')
   .eq('staff_id', staffData.id)
         setAssignedClasses(classData || [])
+
+        // Cache classes/students/subjects for offline use
+        if (classData?.length > 0 && navigator.onLine) {
+          await cacheClasses(classData.map(c => c.classes))
+
+          const classIds = classData.map(c => c.classes.id)
+          const { data: allStudents } = await supabase
+            .from('students')
+            .select('id, first_name, middle_name, last_name, admission_number, class_id, arm_id')
+            .in('class_id', classIds)
+            .eq('status', 'Active')
+          if (allStudents) await cacheStudents(allStudents)
+
+          const sections = [...new Set(classData.map(c => c.classes.section))]
+          const { data: subjectData } = await supabase
+            .from('subjects')
+            .select('*')
+            .eq('school_id', schoolId)
+            .in('section', sections)
+          if (subjectData) await cacheSubjects(subjectData)
+        }
 
         // Today's attendance summary
         const today = new Date().toISOString().split('T')[0]

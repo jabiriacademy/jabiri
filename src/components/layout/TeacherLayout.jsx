@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useTermStore } from '../../store/termStore'
 import { useEffect } from 'react'
+import OfflineBanner from '../shared/OfflineBanner'
 import {
   LayoutDashboard,
   ClipboardList,
@@ -156,8 +157,11 @@ const TeacherLayout = ({ children }) => {
       </header>
 
       {/* Main Content */}
-      <main className="lg:ml-64 pt-20 p-4 lg:p-6 min-h-screen">
-        {children}
+      <main className="lg:ml-64 pt-16 min-h-screen">
+        <OfflineBanner />
+        <div className="p-4 lg:p-6">
+          {children}
+        </div>
       </main>
     </div>
   )
