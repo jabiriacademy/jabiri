@@ -130,9 +130,10 @@ const PromoteStudents = () => {
         })
       })
 
-      // Execute all updates
+      // Execute all updates, tracking any that fail instead of assuming success
+      const failed = []
       for (const update of updates) {
-        await supabase
+        const { error: updateError } = await supabase
           .from('students')
           .update({
             status: update.status,
@@ -141,11 +142,16 @@ const PromoteStudents = () => {
             updated_at: new Date(),
           })
           .eq('id', update.id)
+        if (updateError) failed.push(update.id)
       }
 
       setPromoted(true)
-      setSuccess(`Successfully processed ${updates.length} students!`)
-      setTimeout(() => setSuccess(''), 5000)
+      if (failed.length > 0) {
+        setError(`${failed.length} of ${updates.length} students could not be updated. Please retry this batch.`)
+      } else {
+        setSuccess(`Successfully processed ${updates.length} students!`)
+        setTimeout(() => setSuccess(''), 5000)
+      }
     } catch (err) {
       setError('Failed to promote students. Please try again.')
     } finally {

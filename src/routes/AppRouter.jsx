@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useAuthStore } from '../store/authStore'
 import ProtectedRoute from './ProtectedRoute'
@@ -64,7 +64,7 @@ const AppRouter = () => {
             <ParentList />
           </ProtectedRoute>
         } />
-        //parent settings
+        {/* parent settings */}
         <Route path="/parent/settings" element={
           <ProtectedRoute allowedRoles={['Parent']}>
             <ParentSettings />
@@ -152,7 +152,7 @@ const AppRouter = () => {
           </ProtectedRoute>
         } />
 
-        //Promotion router
+        {/* Promotion router */}
         <Route path="/admin/students/promote" element={
           <ProtectedRoute allowedRoles={['Admin', 'Headmaster']}>
             <PromoteStudents />
@@ -251,6 +251,10 @@ const AppRouter = () => {
             <p className="text-red-500 text-xl font-semibold">Access Denied</p>
           </div>
         } />
+
+        {/* Catch-all — anything unmatched sends the user back to the root,
+            which RoleRouter/ProtectedRoute then route to the right dashboard */}
+        <Route path="*" element={<Navigate to="/" replace />} />
 
       </Routes>
     </BrowserRouter>

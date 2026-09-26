@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
+import { cacheAuthMeta, getCachedAuthMeta } from '../lib/offlineDB'
 
 export const useAuthStore = create((set) => ({
   user: null,
@@ -18,12 +19,13 @@ export const useAuthStore = create((set) => ({
     set({ loading: true })
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.user) {
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role, school_id')
-        .eq('auth_user_id', session.user.id)
-        .single()
-      
+      if (navigator.onLine) {
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role, school_id')
+          .eq('auth_user_id', session.user.id)
+          .single()
+
         // Fetch school details
         let schoolName = null
         let schoolLogo = null
@@ -37,6 +39,8 @@ export const useAuthStore = create((set) => ({
           schoolLogo = schoolData?.logo_url || null
         }
 
+        if (roleData) cacheAuthMeta(roleData.role, roleData.school_id, schoolName, schoolLogo)
+
         set({
           user: session.user,
           role: roleData?.role || null,
@@ -44,6 +48,19 @@ export const useAuthStore = create((set) => ({
           schoolName,
           schoolLogo,
         })
+      } else {
+        // Offline — can't confirm role/school from the server, so trust
+        // the cached session and use whatever was cached last time we
+        // were online, instead of leaving role/schoolId as null
+        const cached = getCachedAuthMeta()
+        set({
+          user: session.user,
+          role: cached.role,
+          schoolId: cached.schoolId,
+          schoolName: cached.schoolName,
+          schoolLogo: cached.schoolLogo,
+        })
+      }
     }
     set({ loading: false })
   },

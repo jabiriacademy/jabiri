@@ -152,3 +152,61 @@ export const getCachedSubjects = async () => {
   const db = await initDB()
   return db.getAll('cached_subjects')
 }
+
+// ---- TEACHER META (staffId + assigned classes) ----
+// Small, session-scoped data — localStorage is enough, and it lets us keep
+// the exact teacher_classes join shape (class_id, arm_id, classes, arms)
+// that MarkAttendance/EnterGrades expect, instead of the flattened rows
+// cacheClasses() stores for other uses.
+export const cacheTeacherMeta = (staffId, assignedClasses) => {
+  localStorage.setItem('cached_staff_id', staffId)
+  localStorage.setItem('cached_assigned_classes', JSON.stringify(assignedClasses || []))
+}
+
+export const getCachedTeacherMeta = () => {
+  const staffId = localStorage.getItem('cached_staff_id')
+  let assignedClasses = []
+  try {
+    assignedClasses = JSON.parse(localStorage.getItem('cached_assigned_classes') || '[]')
+  } catch {
+    assignedClasses = []
+  }
+  return { staffId, assignedClasses }
+}
+
+// ---- SCHOOL CONFIG (score config + grade scale) ----
+// Needed offline too — without it, grade calculation has nothing to match
+// against and would mark every student's total as 'F'.
+export const cacheSchoolConfig = (scoreConfig, gradeScale) => {
+  if (scoreConfig) localStorage.setItem('cached_score_config', JSON.stringify(scoreConfig))
+  if (gradeScale) localStorage.setItem('cached_grade_scale', JSON.stringify(gradeScale))
+}
+
+export const getCachedSchoolConfig = () => {
+  let scoreConfig = null
+  let gradeScale = null
+  try {
+    scoreConfig = JSON.parse(localStorage.getItem('cached_score_config') || 'null')
+    gradeScale = JSON.parse(localStorage.getItem('cached_grade_scale') || 'null')
+  } catch {
+    // ignore malformed cache
+  }
+  return { scoreConfig, gradeScale }
+}
+
+// ---- AUTH META (role + school info) ----
+// So a cached login can still be routed to the right dashboard when the
+// role/school lookup can't reach the server.
+export const cacheAuthMeta = (role, schoolId, schoolName, schoolLogo) => {
+  localStorage.setItem('cached_role', role || '')
+  localStorage.setItem('cached_school_id', schoolId || '')
+  localStorage.setItem('cached_school_name', schoolName || '')
+  localStorage.setItem('cached_school_logo', schoolLogo || '')
+}
+
+export const getCachedAuthMeta = () => ({
+  role: localStorage.getItem('cached_role') || null,
+  schoolId: localStorage.getItem('cached_school_id') || null,
+  schoolName: localStorage.getItem('cached_school_name') || null,
+  schoolLogo: localStorage.getItem('cached_school_logo') || null,
+})

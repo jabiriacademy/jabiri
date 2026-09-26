@@ -8,7 +8,7 @@ import {
   ClipboardList, BookOpen, BarChart2,
   FileText, Users, CheckCircle
 } from 'lucide-react'
-import { cacheStudents, cacheClasses, cacheSubjects } from '../../lib/offlineDB'
+import { cacheStudents, cacheClasses, cacheSubjects, cacheTeacherMeta } from '../../lib/offlineDB'
 
 const TeacherDashboard = () => {
   const { user, schoolId } = useAuthStore()
@@ -42,8 +42,9 @@ const TeacherDashboard = () => {
   .eq('staff_id', staffData.id)
         setAssignedClasses(classData || [])
 
-        // Cache classes/students/subjects for offline use
+        // Cache everything a teacher needs to work offline
         if (classData?.length > 0 && navigator.onLine) {
+          cacheTeacherMeta(staffData.id, classData)
           await cacheClasses(classData.map(c => c.classes))
 
           const classIds = classData.map(c => c.classes.id)
@@ -59,6 +60,7 @@ const TeacherDashboard = () => {
             .from('subjects')
             .select('*')
             .eq('school_id', schoolId)
+            .eq('is_active', true)
             .in('section', sections)
           if (subjectData) await cacheSubjects(subjectData)
         }

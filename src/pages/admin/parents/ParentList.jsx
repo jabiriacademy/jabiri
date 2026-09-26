@@ -42,13 +42,14 @@ const ParentList = () => {
     setCreatingLogin(true)
     setError('')
     try {
+      const { data: { session: authSession } } = await supabase.auth.getSession()
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-parent-user`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${authSession.access_token}`,
           },
           body: JSON.stringify({
             parentId: parent.id,

@@ -111,14 +111,18 @@ if (createLogin && tempPassword) {
     ? 'Teacher'
     : null
 
-  if (staffRole) {
+  
+  if (!staffRole) {
+    alert('Staff registered, but no login was created — logins are only available for Teaching staff and Head Teachers.')
+  } else {
+    const { data: { session: authSession } } = await supabase.auth.getSession()
     const response = await fetch(
   `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-user`,
   {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Authorization': `Bearer ${authSession.access_token}`,
     },
     body: JSON.stringify({
       email: form.email,

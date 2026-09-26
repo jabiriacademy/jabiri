@@ -84,13 +84,14 @@ const StaffProfile = () => {
         return
       }
 
+      const { data: { session: authSession } } = await supabase.auth.getSession()
       const response = await fetch(
   `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-user`,
   {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Authorization': `Bearer ${authSession.access_token}`,
     },
     body: JSON.stringify({
       email: form.email,
@@ -176,7 +177,8 @@ if (result.error) throw new Error(result.error)
 
       // Update class assignments if teaching staff
       if (form.staff_type === 'Teaching') {
-  await supabase.from('teacher_classes').delete().eq('staff_id', id)
+  const { error: deleteError } = await supabase.from('teacher_classes').delete().eq('staff_id', id)
+  if (deleteError) throw deleteError
   if (selectedClasses.length > 0) {
     const assignments = selectedClasses.map(key => {
       const parts = key.split('_')
@@ -186,7 +188,10 @@ if (result.error) throw new Error(result.error)
         arm_id: parts[1] || null,
       }
     })
-    await supabase.from('teacher_classes').insert(assignments)
+    const { error: insertError } = await supabase.from('teacher_classes').insert(assignments)
+    if (insertError) {
+      throw new Error('Class list was cleared but could not be updated — please re-select and save again.')
+    }
   }
 }
 

@@ -3,7 +3,11 @@ import { supabase } from '../../../lib/supabase'
 import { useAuthStore } from '../../../store/authStore'
 import { useTermStore } from '../../../store/termStore'
 import { Save } from 'lucide-react'
-import { savePendingGrades } from '../../../lib/offlineDB'
+import {
+  savePendingGrades, getCachedStudents, getCachedSubjects,
+  getCachedTeacherMeta, getCachedSchoolConfig,
+  cacheTeacherMeta, cacheSchoolConfig,
+} from '../../../lib/offlineDB'
 import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
 
 const PHASES = [
@@ -40,21 +44,34 @@ const EnterGrades = () => {
   // Fetch initial data
   useEffect(() => {
     const fetchData = async () => {
-      const { data: staffData } = await supabase
-        .from('staff').select('id').eq('auth_user_id', user.id).single()
-      if (!staffData) return
-      setStaffId(staffData.id)
+      if (navigator.onLine) {
+        const { data: staffData } = await supabase
+          .from('staff').select('id').eq('auth_user_id', user.id).single()
+        if (!staffData) return
+        setStaffId(staffData.id)
 
-      const { data: classData } = await supabase
-  .from('teacher_classes')
-  .select('*, classes(id, name, section), arms(id, name)')
-  .eq('staff_id', staffData.id)
-      setAssignedClasses(classData || [])
+        const { data: classData } = await supabase
+    .from('teacher_classes')
+    .select('*, classes(id, name, section), arms(id, name)')
+    .eq('staff_id', staffData.id)
+        setAssignedClasses(classData || [])
 
-      const { data: schoolData } = await supabase
-        .from('schools').select('score_config, grade_scale').eq('id', schoolId).single()
-      if (schoolData?.score_config) setScoreConfig(schoolData.score_config)
-      if (schoolData?.grade_scale) setGradeScale(schoolData.grade_scale)
+        const { data: schoolData } = await supabase
+          .from('schools').select('score_config, grade_scale').eq('id', schoolId).single()
+        if (schoolData?.score_config) setScoreConfig(schoolData.score_config)
+        if (schoolData?.grade_scale) setGradeScale(schoolData.grade_scale)
+        if (schoolData) cacheSchoolConfig(schoolData.score_config, schoolData.grade_scale)
+        if (classData?.length > 0) cacheTeacherMeta(staffData.id, classData)
+      } else {
+        const { staffId: cachedStaffId, assignedClasses: cachedClasses } = getCachedTeacherMeta()
+        if (cachedStaffId) {
+          setStaffId(cachedStaffId)
+          setAssignedClasses(cachedClasses)
+        }
+        const { scoreConfig: cachedScoreConfig, gradeScale: cachedGradeScale } = getCachedSchoolConfig()
+        if (cachedScoreConfig) setScoreConfig(cachedScoreConfig)
+        if (cachedGradeScale) setGradeScale(cachedGradeScale)
+      }
     }
     if (user && currentSession && schoolId) fetchData()
   }, [user, currentSession, schoolId])
@@ -64,14 +81,22 @@ const EnterGrades = () => {
     const fetchSubjects = async () => {
       if (!selectedClass) return
       const section = selectedClass.classes.section
-      const { data } = await supabase
-        .from('subjects')
-        .select('*')
-        .eq('school_id', schoolId)
-        .eq('is_active', true)
-        .or(`section.eq.${section},section.eq.Both`)
-        .order('name')
-      setSubjects(data || [])
+      if (navigator.onLine) {
+        const { data } = await supabase
+          .from('subjects')
+          .select('*')
+          .eq('school_id', schoolId)
+          .eq('is_active', true)
+          .or(`section.eq.${section},section.eq.Both`)
+          .order('name')
+        setSubjects(data || [])
+      } else {
+        const cached = await getCachedSubjects()
+        const filtered = cached
+          .filter(s => s.section === section || s.section === 'Both')
+          .sort((a, b) => a.name.localeCompare(b.name))
+        setSubjects(filtered)
+      }
       setSelectedSubject(null)
     }
     fetchSubjects()
@@ -93,23 +118,38 @@ const EnterGrades = () => {
       setLocked(reportCard?.is_published || false)
 
       // Fetch students
-      const query = supabase
-        .from('students')
-        .select('id, first_name, middle_name, last_name, admission_number')
-        .eq('class_id', selectedClass.classes.id)
-        .eq('status', 'Active')
-        .order('first_name')
-      if (selectedClass.arm_id) query.eq('arm_id', selectedClass.arm_id)
-      const { data: studentData } = await query
-      setStudents(studentData || [])
+      let studentData
+      if (navigator.onLine) {
+        const query = supabase
+          .from('students')
+          .select('id, first_name, middle_name, last_name, admission_number')
+          .eq('class_id', selectedClass.classes.id)
+          .eq('status', 'Active')
+          .order('first_name')
+        if (selectedClass.arm_id) query.eq('arm_id', selectedClass.arm_id)
+        const res = await query
+        studentData = res.data || []
+      } else {
+        const cached = await getCachedStudents(selectedClass.classes.id)
+        studentData = (selectedClass.arm_id
+          ? cached.filter(s => s.arm_id === selectedClass.arm_id)
+          : cached
+        ).sort((a, b) => a.first_name.localeCompare(b.first_name))
+      }
+      setStudents(studentData)
 
-      // Fetch existing grades
-      const { data: gradesData } = await supabase
-        .from('grades')
-        .select('*')
-        .in('student_id', studentData?.map(s => s.id) || [])
-        .eq('subject_id', selectedSubject.id)
-        .eq('term_id', currentTerm.id)
+      // Fetch existing grades (only possible online — offline starts blank,
+      // same as a student with no prior score for this phase)
+      let gradesData = null
+      if (navigator.onLine) {
+        const res = await supabase
+          .from('grades')
+          .select('*')
+          .in('student_id', studentData.map(s => s.id))
+          .eq('subject_id', selectedSubject.id)
+          .eq('term_id', currentTerm.id)
+        gradesData = res.data
+      }
 
       // Map grades to scores
       const savedMap = {}

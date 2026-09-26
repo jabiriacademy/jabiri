@@ -3,7 +3,7 @@ import { supabase } from '../../../lib/supabase'
 import { useAuthStore } from '../../../store/authStore'
 import { useTermStore } from '../../../store/termStore'
 import { CheckCircle, XCircle, Clock, FileCheck } from 'lucide-react'
-import { savePendingAttendance } from '../../../lib/offlineDB'
+import { savePendingAttendance, getCachedStudents, getCachedTeacherMeta } from '../../../lib/offlineDB'
 import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
 
 const STATUS_OPTIONS = ['Present', 'Absent', 'Late', 'Excused']
@@ -35,21 +35,31 @@ const MarkAttendance = () => {
   // Fetch staff ID and assigned classes
   useEffect(() => {
     const fetchStaffData = async () => {
-      const { data: staffData } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .single()
+      if (navigator.onLine) {
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .single()
 
-      if (staffData) {
-        setStaffId(staffData.id)
-        const { data: classData } = await supabase
-  .from('teacher_classes')
-  .select('*, classes(id, name, section), arms(id, name)')
-  .eq('staff_id', staffData.id)
+        if (staffData) {
+          setStaffId(staffData.id)
+          const { data: classData } = await supabase
+    .from('teacher_classes')
+    .select('*, classes(id, name, section), arms(id, name)')
+    .eq('staff_id', staffData.id)
 
-        setAssignedClasses(classData || [])
-        if (classData?.length === 1) setSelectedClass(classData[0])
+          setAssignedClasses(classData || [])
+          if (classData?.length === 1) setSelectedClass(classData[0])
+        }
+      } else {
+        // Offline — fall back to what Dashboard cached on the last online visit
+        const { staffId: cachedStaffId, assignedClasses: cachedClasses } = getCachedTeacherMeta()
+        if (cachedStaffId) {
+          setStaffId(cachedStaffId)
+          setAssignedClasses(cachedClasses)
+          if (cachedClasses.length === 1) setSelectedClass(cachedClasses[0])
+        }
       }
       setLoading(false)
     }
@@ -92,36 +102,50 @@ const MarkAttendance = () => {
       }
 
       // Fetch students
-      const query = supabase
-        .from('students')
-        .select('id, first_name, middle_name, last_name, admission_number')
-        .eq('class_id', selectedClass.classes.id)
-        .eq('status', 'Active')
-        .order('first_name')
+      let studentData
+      if (navigator.onLine) {
+        const query = supabase
+          .from('students')
+          .select('id, first_name, middle_name, last_name, admission_number')
+          .eq('class_id', selectedClass.classes.id)
+          .eq('status', 'Active')
+          .order('first_name')
 
-      if (selectedClass.arm_id) {
-        query.eq('arm_id', selectedClass.arm_id)
+        if (selectedClass.arm_id) {
+          query.eq('arm_id', selectedClass.arm_id)
+        }
+
+        const res = await query
+        studentData = res.data || []
+      } else {
+        const cached = await getCachedStudents(selectedClass.classes.id)
+        studentData = (selectedClass.arm_id
+          ? cached.filter(s => s.arm_id === selectedClass.arm_id)
+          : cached
+        ).sort((a, b) => a.first_name.localeCompare(b.first_name))
+      }
+      setStudents(studentData)
+
+      // Check existing attendance for this date (only possible online)
+      const attendanceMap = {}
+      let existingAttendance = null
+      if (navigator.onLine) {
+        const res = await supabase
+          .from('attendance')
+          .select('*')
+          .in('student_id', studentData.map(s => s.id))
+          .eq('date', isoDate)
+        existingAttendance = res.data
       }
 
-      const { data: studentData } = await query
-      setStudents(studentData || [])
-
-      // Check existing attendance for this date
-      const { data: existingAttendance } = await supabase
-        .from('attendance')
-        .select('*')
-        .in('student_id', studentData?.map(s => s.id) || [])
-        .eq('date', isoDate)
-
-      // Map existing attendance
-      const attendanceMap = {}
       if (existingAttendance?.length > 0) {
         existingAttendance.forEach(a => {
           attendanceMap[a.student_id] = a.status
         })
       } else {
-        // Default all to Present
-        studentData?.forEach(s => {
+        // Default all to Present (also the offline case — no way to know
+        // what was already marked without a connection)
+        studentData.forEach(s => {
           attendanceMap[s.id] = 'Present'
         })
       }
@@ -164,6 +188,7 @@ const MarkAttendance = () => {
       }))
 
       if (navigator.onLine) {
+        // Online — save directly to Supabase
         const { error } = await supabase
           .from('attendance')
           .upsert(records, { onConflict: 'student_id,date' })
@@ -171,6 +196,7 @@ const MarkAttendance = () => {
         if (error) throw error
         setSuccess(`Attendance saved for ${date}!`)
       } else {
+        // Offline — save to IndexedDB, syncs automatically when back online
         await savePendingAttendance(records)
         setSuccess(`📱 Saved offline for ${date} — will sync when connected`)
         checkPending()
