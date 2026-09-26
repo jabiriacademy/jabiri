@@ -164,7 +164,7 @@ const SubjectList = () => {
             <div className="flex gap-3 pt-2">
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || !form.name.trim() || !form.section}
                 className="bg-primary hover:bg-primary-light text-white font-semibold px-6 py-2.5 rounded-lg transition disabled:opacity-60"
               >
                 {saving ? 'Saving...' : editingSubject ? 'Update Subject' : 'Add Subject'}

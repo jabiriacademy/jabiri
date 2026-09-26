@@ -28,6 +28,7 @@ const ParentList = () => {
           students(first_name, last_name, admission_number, classes(name))
         )
       `)
+      .eq('school_id', schoolId)
       .order('full_name')
     setParents(data || [])
     setLoading(false)

@@ -65,20 +65,20 @@ const ParentLayout = ({ children, onChildChange, children: layoutChildren }) => 
 
       {/* Sidebar */}
       <aside className={`
-        fixed top-0 left-0 h-screen w-64 bg-primary flex flex-col z-50
+        fixed top-0 left-0 h-dvh w-64 bg-primary flex flex-col z-50
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0
       `}>
         <div className="px-6 py-6 border-b border-primary-light flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             {schoolLogo ? (
-  <img
-    src={schoolLogo}
-    alt="Logo"
-    className="w-9 h-9 rounded-full object-contain bg-white p-0.5"
-  />
-) : (
+            <img
+              src={schoolLogo}
+              alt="Logo"
+              className="w-9 h-9 rounded-full object-contain bg-white p-0.5"
+            />
+          ) : (
   <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center shrink-0">
     <span className="text-white font-bold text-xs">
       {schoolName?.charAt(0) || 'S'}
@@ -127,7 +127,7 @@ const ParentLayout = ({ children, onChildChange, children: layoutChildren }) => 
 
       {/* Top Navbar */}
       <header className="fixed top-0 left-0 lg:left-64 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6 z-40">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition text-gray-600"

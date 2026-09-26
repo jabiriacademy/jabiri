@@ -144,7 +144,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
       {/* Sidebar */}
       <aside className={`
-        fixed top-0 left-0 h-screen w-64 bg-primary flex flex-col z-50
+        fixed top-0 left-0 h-dvh w-64 bg-primary flex flex-col z-50
         transform transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0
@@ -152,7 +152,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
         {/* Logo + Close button on mobile */}
         <div className="px-6 py-6 border-b border-primary-light flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             {schoolLogo ? (
             <img
               src={schoolLogo}

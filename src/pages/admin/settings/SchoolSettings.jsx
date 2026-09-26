@@ -526,6 +526,31 @@ const handleFactoryReset = async () => {
       .eq('auth_user_id', currentUser.id)
       .single()
 
+    // ---- Gather this school's IDs up front ----
+    // terms, parent_students, teacher_classes and arms don't have their own
+    // school_id column — they're only reachable via sessions/students/staff/
+    // classes. Without scoping through these IDs, deleting from those tables
+    // affects every school on the platform, not just this one.
+    const { data: schoolSessions } = await supabase.from('sessions').select('id').eq('school_id', schoolId)
+    const sessionIds = schoolSessions?.map(s => s.id) || []
+
+    const { data: schoolClasses } = await supabase.from('classes').select('id').eq('school_id', schoolId)
+    const classIds = schoolClasses?.map(c => c.id) || []
+
+    const { data: schoolStaff } = await supabase.from('staff').select('id, auth_user_id').eq('school_id', schoolId)
+    const staffIds = schoolStaff?.map(s => s.id) || []
+
+    const { data: schoolStudents } = await supabase.from('students').select('id').eq('school_id', schoolId)
+    const studentIds = schoolStudents?.map(s => s.id) || []
+
+    const { data: schoolParents } = await supabase.from('parents').select('id, auth_user_id').eq('school_id', schoolId)
+
+    // Every login account tied to this school (except the admin doing the reset)
+    const authUserIdsToDelete = [
+      ...(schoolStaff?.map(s => s.auth_user_id).filter(Boolean) || []),
+      ...(schoolParents?.map(p => p.auth_user_id).filter(Boolean) || []),
+    ].filter(uid => uid !== currentUser.id)
+
     // ---- DELETE IN CORRECT ORDER (children before parents) ----
 
     // 1. Delete attendance
@@ -564,29 +589,32 @@ const handleFactoryReset = async () => {
     await supabase.from('announcements')
       .delete().eq('school_id', schoolId)
 
-    // 10. Delete parent_students links
-    await supabase.from('parent_students')
-      .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    // 10. Delete parent_students links (scoped to this school's students)
+    if (studentIds.length > 0) {
+      await supabase.from('parent_students').delete().in('student_id', studentIds)
+    }
 
-    // 11. Delete teacher_classes
-    await supabase.from('teacher_classes')
-      .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    // 11. Delete teacher_classes (scoped to this school's staff)
+    if (staffIds.length > 0) {
+      await supabase.from('teacher_classes').delete().in('staff_id', staffIds)
+    }
 
     // 12. Delete students
     await supabase.from('students')
       .delete().eq('school_id', schoolId)
 
-    // 13. Delete parents
+    // 13. Delete parents (parents DOES have its own school_id — no subquery needed)
     await supabase.from('parents')
-      .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      .delete().eq('school_id', schoolId)
 
     // 14. Delete staff
     await supabase.from('staff')
       .delete().eq('school_id', schoolId)
 
-    // 15. Delete arms
-    await supabase.from('arms')
-      .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    // 15. Delete arms (scoped to this school's classes)
+    if (classIds.length > 0) {
+      await supabase.from('arms').delete().in('class_id', classIds)
+    }
 
     // 16. Delete classes
     await supabase.from('classes')
@@ -596,9 +624,10 @@ const handleFactoryReset = async () => {
     await supabase.from('subjects')
       .delete().eq('school_id', schoolId)
 
-    // 18. Delete terms
-    await supabase.from('terms')
-      .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    // 18. Delete terms (scoped to this school's sessions)
+    if (sessionIds.length > 0) {
+      await supabase.from('terms').delete().in('session_id', sessionIds)
+    }
 
     // 19. Delete sessions
     await supabase.from('sessions')
@@ -661,6 +690,20 @@ const handleFactoryReset = async () => {
         role: 'Admin',
         school_id: schoolId,
       }, { onConflict: 'auth_user_id' })
+
+    // 26. Delete the actual login accounts for this school's staff/parents —
+    // without this, their emails stay locked in auth.users forever
+    if (authUserIdsToDelete.length > 0) {
+      const { data: { session: authSession } } = await supabase.auth.getSession()
+      await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-auth-users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authSession.access_token}`,
+        },
+        body: JSON.stringify({ userIds: authUserIdsToDelete, schoolId }),
+      })
+    }
 
     setResetSuccess(true)
     setResetting(false)
