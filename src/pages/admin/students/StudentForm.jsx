@@ -19,6 +19,16 @@ const StudentForm = () => {
   const [sessions, setSessions] = useState([])
   const [parentCredentials, setParentCredentials] = useState(null)
 
+  const generateTempPassword = () => {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+    let pwd = ''
+    for (let i = 0; i < 8; i++) pwd += chars[Math.floor(Math.random() * chars.length)]
+    return pwd
+  }
+
+  // Pre-filled with a random password; the admin can overwrite it
+  const [guardianPassword, setGuardianPassword] = useState(generateTempPassword)
+
   const [form, setForm] = useState({
     first_name: '',
     middle_name: '',
@@ -92,6 +102,12 @@ const StudentForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+
+    if (guardianPassword.trim() && guardianPassword.trim().length < 6) {
+      setError('Parent temporary password must be at least 6 characters.')
+      return
+    }
+
     setSaving(true)
 
     try {
@@ -120,7 +136,101 @@ const StudentForm = () => {
 
 if (insertError) throw insertError
 
-navigate('/admin/students')
+      // Link (or create) a parent account from the guardian email.
+      // The student is already saved at this point, so a problem here is
+      // reported separately instead of failing the whole enrollment.
+      let showedModal = false
+      if (form.guardian_email) {
+        try {
+          const { data: existingParent } = await supabase
+            .from('parents')
+            .select('*')
+            .eq('email', form.guardian_email)
+            .maybeSingle()
+
+          if (existingParent) {
+            // Email already known: just link this student, no new password
+            await supabase.from('parent_students')
+              .insert([{ parent_id: existingParent.id, student_id: newStudent.id }])
+            setParentCredentials({
+              name: existingParent.full_name,
+              email: existingParent.email,
+              linked: true,
+            })
+            showedModal = true
+          } else {
+            const tempPassword = guardianPassword.trim() || generateTempPassword()
+            const { data: newParent, error: parentInsertError } = await supabase
+              .from('parents')
+              .insert([{
+                full_name: form.guardian_name,
+                email: form.guardian_email,
+                phone: form.guardian_phone,
+              }])
+              .select()
+              .single()
+
+            if (parentInsertError?.code === '23505') {
+              // Another enrollment created this exact email a moment ago:
+              // link to that record instead of failing
+              const { data: raceParent } = await supabase
+                .from('parents')
+                .select('*')
+                .eq('email', form.guardian_email)
+                .single()
+              await supabase.from('parent_students')
+                .insert([{ parent_id: raceParent.id, student_id: newStudent.id }])
+              setParentCredentials({
+                name: raceParent.full_name,
+                email: raceParent.email,
+                linked: true,
+              })
+              showedModal = true
+            } else if (parentInsertError) {
+              throw parentInsertError
+            } else {
+              await supabase.from('parent_students')
+                .insert([{ parent_id: newParent.id, student_id: newStudent.id }])
+
+              const { data: { session: authSession } } = await supabase.auth.getSession()
+              const response = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-parent-user`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authSession.access_token}`,
+                  },
+                  body: JSON.stringify({
+                    parentId: newParent.id,
+                    email: form.guardian_email,
+                    fullName: form.guardian_name,
+                    password: tempPassword,
+                  }),
+                }
+              )
+              const result = await response.json()
+              if (result.error) {
+                alert(`Student enrolled, but the parent login could not be created: ${result.error}`)
+              } else {
+                setParentCredentials({
+                  name: form.guardian_name,
+                  email: form.guardian_email,
+                  password: tempPassword,
+                  linked: false,
+                })
+                showedModal = true
+              }
+            }
+          }
+        } catch (parentErr) {
+          console.error('Parent account error:', parentErr)
+          alert(`Student enrolled, but the parent account could not be set up: ${parentErr.message}`)
+        }
+      }
+
+      // If the credentials modal is showing, its "Done" button navigates
+      if (!showedModal) navigate('/admin/students')
     } catch (err) {
       setError(err.message || 'Failed to enroll student. Please try again.')
     } finally {
@@ -314,6 +424,24 @@ navigate('/admin/students')
               </label>
               <input type="email" name="guardian_email" value={form.guardian_email} onChange={handleChange} placeholder="parent@example.com" className={inputClass} />
             </div>
+            {form.guardian_email && (
+              <div>
+                <label className={labelClass}>
+                  Parent Temporary Password
+                  <span className="text-xs text-gray-400 ml-1">(only used for a new account)</span>
+                </label>
+                <input
+                  type="text"
+                  value={guardianPassword}
+                  onChange={(e) => setGuardianPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  className={inputClass}
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  If this email already has a parent account, this is ignored.
+                </p>
+              </div>
+            )}
             <div>
               <label className={labelClass}>Occupation</label>
               <input name="guardian_occupation" value={form.guardian_occupation} onChange={handleChange} placeholder="e.g. Teacher, Engineer" className={inputClass} />
@@ -373,7 +501,9 @@ navigate('/admin/students')
           Student Enrolled Successfully!
         </h2>
         <p className="text-sm text-gray-500 mt-1">
-          A parent account has been created.
+          {parentCredentials.linked
+            ? 'Linked to an existing parent account.'
+            : 'A parent account has been created.'}
         </p>
       </div>
 
@@ -394,17 +524,21 @@ navigate('/admin/students')
               {parentCredentials.email}
             </span>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Password:</span>
-            <span className="font-bold text-primary text-base">
-              {parentCredentials.password}
-            </span>
-          </div>
+          {!parentCredentials.linked && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Temporary Password:</span>
+              <span className="font-bold text-primary text-base">
+                {parentCredentials.password}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       <p className="text-xs text-gray-400 text-center mb-5">
-        📧 These credentials have also been sent to {parentCredentials.email}
+        {parentCredentials.linked
+          ? 'This parent can log in with their existing password.'
+          : 'Share these details with the parent now. The password is only shown once.'}
       </p>
 
       <button

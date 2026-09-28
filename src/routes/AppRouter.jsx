@@ -8,6 +8,7 @@ import HeadReportCards from '../pages/headmaster/ReportCards'
 
 // Auth
 import Login from '../pages/auth/Login'
+import ResetPassword from '../pages/auth/ResetPassword'
 
 // Admin
 import AdminDashboard from '../pages/admin/Dashboard'
@@ -72,6 +73,7 @@ const AppRouter = () => {
         } />
         {/* Public */}
         <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Role redirect */}
         <Route path="/" element={

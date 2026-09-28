@@ -80,18 +80,36 @@ const ParentList = () => {
     }
   }
 
-  const handleResetPassword = async (parent) => {
+  const handleSetPassword = async (parent) => {
+    if (tempPassword.length < 6) return
     setResetting(parent.id)
     setError('')
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(parent.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      })
-      if (error) throw error
-      setSuccess(`Password reset email sent to ${parent.email}`)
+      const { data: { session: authSession } } = await supabase.auth.getSession()
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-set-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authSession.access_token}`,
+          },
+          body: JSON.stringify({
+            targetType: 'parent',
+            targetId: parent.id,
+            password: tempPassword,
+          }),
+        }
+      )
+      const result = await response.json()
+      if (result.error) throw new Error(result.error)
+
+      setSuccess(`New password set for ${parent.full_name}. Please give it to them.`)
+      setShowLoginForm(null)
+      setTempPassword('')
       setTimeout(() => setSuccess(''), 4000)
     } catch (err) {
-      setError('Failed to send reset email.')
+      setError(`Failed: ${err.message}`)
     } finally {
       setResetting(null)
     }
@@ -196,12 +214,14 @@ const ParentList = () => {
                     <td className="px-6 py-4">
                       {parent.auth_user_id ? (
                         <button
-                          onClick={() => handleResetPassword(parent)}
-                          disabled={resetting === parent.id}
+                          onClick={() => {
+                            setShowLoginForm(parent.id)
+                            setTempPassword('')
+                          }}
                           className="flex items-center gap-1.5 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg transition disabled:opacity-60"
                         >
                           <RefreshCw size={12} />
-                          {resetting === parent.id ? 'Sending...' : 'Reset Password'}
+                          Set New Password
                         </button>
                       ) : (
                         <button
@@ -223,7 +243,7 @@ const ParentList = () => {
                       <td colSpan={5} className="px-6 py-4 bg-blue-50 border-b border-blue-100">
                         <div className="flex items-center gap-3 flex-wrap">
                           <p className="text-sm font-medium text-gray-700">
-                            Set password for {parent.full_name}:
+                            {parent.auth_user_id ? 'Set a new password for' : 'Set password for'} {parent.full_name}:
                           </p>
                           <input
                             type="password"
@@ -234,11 +254,11 @@ const ParentList = () => {
                           />
                           <div className="flex gap-2">
                             <button
-                              onClick={() => handleCreateLogin(parent)}
-                              disabled={creatingLogin || !tempPassword}
+                              onClick={() => parent.auth_user_id ? handleSetPassword(parent) : handleCreateLogin(parent)}
+                              disabled={creatingLogin || resetting === parent.id || tempPassword.length < 6}
                               className="bg-primary hover:bg-primary-light text-white text-xs font-semibold px-4 py-2 rounded-lg transition disabled:opacity-60"
                             >
-                              {creatingLogin ? 'Creating...' : 'Create Login'}
+                              {creatingLogin || resetting === parent.id ? 'Saving...' : parent.auth_user_id ? 'Set Password' : 'Create Login'}
                             </button>
                             <button
                               onClick={() => {

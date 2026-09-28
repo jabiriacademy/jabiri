@@ -118,17 +118,36 @@ if (result.error) throw new Error(result.error)
     }
   }
 
-  const handleResetPassword = async () => {
+  const handleSetPassword = async () => {
+    if (newTempPassword.length < 6) return
     setResettingPassword(true)
+    setError('')
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(form.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      })
-      if (error) throw error
-      setLoginSuccess(`Password reset email sent to ${form.email}`)
+      const { data: { session: authSession } } = await supabase.auth.getSession()
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-set-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authSession.access_token}`,
+          },
+          body: JSON.stringify({
+            targetType: 'staff',
+            targetId: id,
+            password: newTempPassword,
+          }),
+        }
+      )
+      const result = await response.json()
+      if (result.error) throw new Error(result.error)
+
+      setShowLoginForm(false)
+      setNewTempPassword('')
+      setLoginSuccess('New password set. Please give it to the staff member.')
       setTimeout(() => setLoginSuccess(''), 4000)
     } catch (err) {
-      setError('Failed to send reset email.')
+      setError(`Failed to set password: ${err.message}`)
     } finally {
       setResettingPassword(false)
     }
@@ -428,14 +447,42 @@ if (result.error) throw new Error(result.error)
                   This staff member has an active login account.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleResetPassword}
-                disabled={resettingPassword}
-                className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-60"
-              >
-                {resettingPassword ? 'Sending...' : '📧 Send Password Reset Email'}
-              </button>
+              {!showLoginForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowLoginForm(true)}
+                  className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-sm font-medium px-4 py-2 rounded-lg transition"
+                >
+                  🔑 Set New Password
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={newTempPassword}
+                    onChange={(e) => setNewTempPassword(e.target.value)}
+                    placeholder="New password (at least 6 characters)"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSetPassword}
+                      disabled={resettingPassword || newTempPassword.length < 6}
+                      className="bg-primary hover:bg-primary-light text-white text-sm font-semibold px-5 py-2 rounded-lg transition disabled:opacity-60"
+                    >
+                      {resettingPassword ? 'Saving...' : 'Set Password'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowLoginForm(false); setNewTempPassword('') }}
+                      className="px-5 py-2 border border-gray-300 text-sm text-gray-600 rounded-lg hover:bg-gray-50 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
